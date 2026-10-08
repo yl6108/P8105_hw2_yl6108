@@ -1,0 +1,283 @@
+---
+title: "P8105_hw2_yl6108"
+output: html_document
+---
+
+# Problem 1
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(janitor)
+
+```
+
+```{r}
+
+transit_df =
+  read_csv("data/NYC_Transit_Subway_Entrance_And_Exit_Data.csv") |>
+  clean_names() |>
+  select(line,
+    station_name,
+    station_latitude,
+    station_longitude,
+    starts_with("route"),
+    entrance_type,
+    entry,
+    vending,
+    ada) |>
+  mutate(
+    entry = case_match(
+      entry,
+      "YES" ~ TRUE,
+      "NO" ~ FALSE)
+  )
+
+dim(transit_df)
+```
+
+The cleaned NYC Transit dataset contains `r nrow(transit_df)` rows and `r ncol(transit_df)` columns. The variables contains the subway line and station, station latitude and longitude, routes served, entrance type, whether entry is permitted, whether vending is present, and ADA compliance. Variable names were standlized, and I converted `entry` to a logical variable. The data are not yet fully tidy.
+
+```{r}
+n_stations =
+  transit_df |>
+  distinct(line, station_name) |>
+  nrow()
+
+n_ada_stations =
+  transit_df |>
+  filter(ada) |>
+  distinct(line, station_name) |>
+  nrow()
+
+prop_entry_no_vending =
+  transit_df |>
+  filter(vending == "NO") |>
+  summarize(prop = mean(entry)) |>
+  pull(prop)
+
+n_stations
+n_ada_stations
+prop_entry_no_vending
+```
+
+There are `r n_stations` distinct stations and `r n_ada_stations` stations are ADA compliant. Among station entrances / exits without vending, `r scales::percent(prop_entry_no_vending, accuracy = 0.1)` allow entry.
+
+```{r}
+transit_tidy =
+  transit_df |>
+  mutate(across(route1:route11, as.character)) |>
+  pivot_longer(
+    route1:route11,
+    names_to = "route_number",
+    values_to = "route_name",
+    values_drop_na = TRUE
+  ) |>
+  mutate(
+    route_number = parse_number(route_number)
+  )
+
+a_station_summary =
+  transit_tidy |>
+  filter(route_name == "A") |>
+  distinct(line, station_name, ada)
+
+n_a_stations = nrow(a_station_summary)
+
+n_a_ada =
+  a_station_summary |>
+  filter(ada) |>
+  nrow()
+
+n_a_stations
+n_a_ada
+```
+`r n_a_stations` distinct stations that serve the A train and `r n_a_ada` of those stations are ADA compliant.
+
+# Problem 2
+
+```{r}
+mr_trash =
+  read_excel(
+    "data/202509 Trash Wheel Collection Data.xlsx",
+    sheet = "Mr. Trash Wheel",
+    range = "A2:N709"
+  ) |>
+  clean_names() |>
+  filter(!is.na(dumpster)) |>
+  mutate(
+    trash_wheel = "Mr. Trash Wheel",
+    month = str_trim(month),
+    sports_balls = as.integer(round(sports_balls))
+  )
+
+professor_trash =
+  read_excel(
+    "data/202509 Trash Wheel Collection Data.xlsx",
+    sheet = "Professor Trash Wheel",
+    range = "A2:M134"
+  ) |>
+  clean_names() |>
+  filter(!is.na(dumpster)) |>
+  mutate(
+    trash_wheel = "Professor Trash Wheel",
+    month = str_trim(month)
+  )
+
+gwynnda_trash =
+  read_excel(
+    "data/202509 Trash Wheel Collection Data.xlsx",
+    sheet = "Gwynns Falls Trash Wheel",
+    range = "A2:L351"
+  ) |>
+  clean_names() |>
+  filter(!is.na(dumpster)) |>
+  mutate(
+    trash_wheel = "Gwynnda",
+    month = str_trim(month)
+  )
+
+trash_wheel_df =
+  bind_rows(
+    mr_trash |> mutate(year = as.integer(year)),
+    professor_trash |> mutate(year = as.integer(year)),
+    gwynnda_trash |> mutate(year = as.integer(year))
+  ) |>
+  relocate(trash_wheel)
+
+trash_wheel_df
+```
+
+```{r}
+professor_total_weight =
+  professor_trash |>
+  summarize(total_weight = sum(weight_tons, na.rm = TRUE)) |>
+  pull(total_weight)
+
+gwynnda_june_2022_butts =
+  gwynnda_trash |>
+  filter(year == 2022, month == "June") |>
+  summarize(total_butts = sum(cigarette_butts, na.rm = TRUE)) |>
+  pull(total_butts)
+
+professor_total_weight
+gwynnda_june_2022_butts
+```
+The dataset contains `r nrow(trash_wheel_df)` observations and `r ncol(trash_wheel_df)` variables. Variables include the Trash Wheel identity, dumpster number, month and year, collection date, weight in tons, volume in cubic yards, and counts of several types of trash such as plastic bottles, cigarette butts, plastic bags, and wrappers. Professor Trash Wheel collected a total of `r round(professor_total_weight, 2)` tons of trash. Gwynnda collected `r scales::comma(gwynnda_june_2022_butts)` cigarette butts.
+
+# Problem 3
+```{r}
+mci_baseline_raw =
+  read_csv(
+    "data/MCI_baseline.csv",
+    skip = 1,
+    na = c(".", "NA", "Na")
+  ) |>
+  clean_names()
+
+mci_baseline =
+  mci_baseline_raw |>
+  filter(is.na(age_at_onset) | age_at_onset > current_age) |>
+  mutate(
+    sex = factor(
+      sex,
+      levels = c(0, 1),
+      labels = c("Female", "Male")
+    ),
+    apoe4 = factor(
+      apoe4,
+      levels = c(0, 1),
+      labels = c("Non-carrier", "Carrier")
+    ),
+    developed_mci = factor(
+      if_else(is.na(age_at_onset), "No", "Yes"),
+      levels = c("No", "Yes")
+    )
+  )
+
+n_raw_baseline = nrow(mci_baseline_raw)
+n_excluded_baseline = n_raw_baseline - nrow(mci_baseline)
+n_recruited = nrow(mci_baseline)
+n_developed_mci = sum(mci_baseline$developed_mci == "Yes")
+mean_baseline_age = mean(mci_baseline$current_age, na.rm = TRUE)
+prop_women_apoe4 =
+  mci_baseline |>
+  filter(sex == "Female") |>
+  summarize(prop = mean(apoe4 == "Carrier")) |>
+  pull(prop)
+
+n_raw_baseline
+n_excluded_baseline
+n_recruited
+n_developed_mci
+mean_baseline_age
+prop_women_apoe4
+```
+Participants whose recorded MCI onset age is less than or equal to their baseline age are excluded because they do not satisfy the requirement of being MCI-free at baseline. Sex and APOE4 status are encoded as factors rather than numeric variables.
+`r n_raw_baseline` participants were recruited. `r n_excluded_baseline` participants whose MCI onset age was at or before the recorded baseline age were excluded, leaving an analytic cohort of `r n_recruited` participants who were MCI-free at baseline. `r n_developed_mci` subsequently developed MCI during follow-up. The mean baseline age was `r round(mean_baseline_age, 2)` years. Among women, **`r scales::percent(prop_women_apoe4, accuracy = 0.1)` were APOE4 carriers**.
+
+```{r}
+amyloid_wide =
+  read_csv(
+    "data/mci_amyloid.csv",
+    skip = 1,
+    na = c("NA", "Na", ".")
+  ) |>
+  clean_names()
+
+amyloid_long =
+  amyloid_wide |>
+  pivot_longer(
+    baseline:time_8,
+    names_to = "visit",
+    values_to = "amyloid_42_40"
+  ) |>
+  mutate(
+    time = case_match(
+      visit,
+      "baseline" ~ 0,
+      "time_2" ~ 2,
+      "time_4" ~ 4,
+      "time_6" ~ 6,
+      "time_8" ~ 8
+    )
+  ) |>
+  select(study_id, time, amyloid_42_40) |>
+  arrange(study_id, time)
+
+nrow(amyloid_wide)
+nrow(amyloid_long)
+sum(is.na(amyloid_long$amyloid_42_40))
+```
+
+The amyloid dataset contains `r nrow(amyloid_wide)` participants with measurements scheduled at baseline and approximately 2, 4, 6, and 8 years. There are `r nrow(amyloid_long)` participant-time rows after pivoting to long format . Missing biomarker values are retained as `NA` so that the scheduled longitudinal structure remains visible.
+
+```{r}
+baseline_only =
+  mci_baseline |>
+  anti_join(amyloid_wide, by = c("id" = "study_id"))
+
+amyloid_only =
+  amyloid_wide |>
+  anti_join(mci_baseline, by = c("study_id" = "id"))
+
+baseline_only_ids = baseline_only$id
+amyloid_only_ids = amyloid_only$study_id
+
+baseline_only_ids
+amyloid_only_ids
+
+mci_complete =
+  mci_baseline |>
+  inner_join(
+    amyloid_long,
+    by = c("id" = "study_id")
+  ) |>
+  arrange(id, time)
+
+write_csv(mci_complete, "data/mci_complete.csv", na = "")
+
+dim(mci_complete)
+n_distinct(mci_complete$id)
+```
+There are `r nrow(baseline_only)` participants who appear in the cleaned baseline dataset but not in the amyloid dataset. Their IDs are `r paste(baseline_only_ids, collapse = ", ")`. There are `r nrow(amyloid_only)` participants who appear in the amyloid dataset but not in the cleaned baseline cohort. This second group includes participants not present in the baseline file as well as the baseline participants excluded for having MCI at baseline. After the inner join, `r n_distinct(mci_complete$id)` participants are represented in both cleaned datasets, with repeated rows corresponding to scheduled biomarker measurement times. The combined dataset is exported as `data/mci_complete.csv`.
